@@ -345,6 +345,8 @@ class DNSEntry:
     """A DNS entry"""
 
     def __init__(self, name, type_, class_):
+        # This isn't technically right: it should only lower-case ASCII,
+        # leaving non-ASCII Unicode codepoints intact.
         self.key = name.lower()
         self.name = name
         self.type = type_
@@ -354,7 +356,7 @@ class DNSEntry:
     def __eq__(self, other):
         """Equality test on name, type, and class"""
         return (isinstance(other, DNSEntry) and
-                self.name == other.name and
+                self.key == other.key and
                 self.type == other.type and
                 self.class_ == other.class_)
 
@@ -1078,6 +1080,8 @@ class DNSCache:
     def entries_with_name(self, name):
         """Returns a list of entries whose key matches the name."""
         try:
+            # This isn't technically right: it should only lower-case ASCII,
+            # leaving non-ASCII Unicode codepoints intact.
             return self.cache[name.lower()]
         except KeyError:
             return []
@@ -1322,6 +1326,7 @@ class ServiceBrowser(threading.Thread):
 
         if record.type == _TYPE_PTR and record.name == self.type:
             expired = record.is_expired(now)
+            # TODO: This should probably be ASCII-case-insensitive?
             service_key = record.alias.lower()
             try:
                 old_record = self.services[service_key]
@@ -1406,6 +1411,12 @@ class ServiceInfo:
         self._set_properties(properties)
 
     @property
+    def key(self):
+        # This isn't technically right: it should only lower-case ASCII,
+        # leaving non-ASCII Unicode codepoints intact.
+        return self.name.lower()
+
+    @property
     def properties(self):
         return self._properties
 
@@ -1482,11 +1493,15 @@ class ServiceInfo:
         """Updates service information from a DNS record"""
         if record is not None and not record.is_expired(now):
             if record.type == _TYPE_A:
+                # TODO: This should be ASCII-case-insensitive comparison
+                # (but in practice we get server from a previous request
+                # so in practice we get away with it, as long as the
+                # publisher is consistent about how they spell it)
                 # if record.name == self.name:
                 if record.name == self.server:
                     self.address = record.address
             elif record.type == _TYPE_SRV:
-                if record.name == self.name:
+                if record.key == self.key:
                     self.server = record.server
                     self.port = record.port
                     self.weight = record.weight
@@ -1496,7 +1511,7 @@ class ServiceInfo:
                         zc, now, zc.cache.get_by_details(
                             self.server, _TYPE_A, _CLASS_IN))
             elif record.type == _TYPE_TXT:
-                if record.name == self.name:
+                if record.key == self.key:
                     self._set_text(record.text)
 
     def request(self, zc, timeout):
@@ -1802,7 +1817,7 @@ class Zeroconf(QuietLogger):
         changed if needed to make it unique on the network."""
         info.ttl = ttl
         self.check_service(info, allow_name_change)
-        self.services[info.name.lower()] = info
+        self.services[info.key] = info
         if info.type in self.servicetypes:
             self.servicetypes[info.type] += 1
         else:
@@ -1836,7 +1851,7 @@ class Zeroconf(QuietLogger):
     def unregister_service(self, info):
         """Unregister a service."""
         try:
-            del self.services[info.name.lower()]
+            del self.services[info.key]
             if self.servicetypes[info.type] > 1:
                 self.servicetypes[info.type] -= 1
             else:
@@ -2023,13 +2038,13 @@ class Zeroconf(QuietLogger):
                     # Answer A record queries for any service addresses we know
                     if question.type in (_TYPE_A, _TYPE_ANY):
                         for service in self.services.values():
-                            if service.server == question.name.lower():
+                            if service.server == question.key:
                                 out.add_answer(msg, DNSAddress(
                                     question.name, _TYPE_A,
                                     _CLASS_IN | _CLASS_UNIQUE,
                                     service.ttl, service.address))
 
-                    service = self.services.get(question.name.lower(), None)
+                    service = self.services.get(question.key, None)
                     if not service:
                         continue
 
