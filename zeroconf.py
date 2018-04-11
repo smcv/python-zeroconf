@@ -387,6 +387,9 @@ class DNSEntry:
             result += "]"
         return result
 
+    def __repr__(self):
+        return DNSEntry.to_string(self, "entry", None)
+
 
 class DNSQuestion(DNSEntry):
 
